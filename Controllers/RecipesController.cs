@@ -1,114 +1,108 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using RecipesApi.Data;
 using RecipesApi.Models;
 
 namespace RecipesApi.Controllers
 {
-    [ApiController]
     [Route("api/[controller]")]
+    [ApiController]
     public class RecipesController : ControllerBase
     {
-        private readonly AppDbContext _db;
-        public RecipesController(AppDbContext db)
+        private readonly AppDbContext _context;
+
+        public RecipesController(AppDbContext context)
         {
-            _db = db;
+            _context = context;
         }
 
-        // GET: api/recipes
+        // GET: api/Recipes
         [HttpGet]
-        public async Task<ActionResult<List<Recipe>>> GetAll()
+        public async Task<ActionResult<IEnumerable<Recipe>>> GetRecipes()
         {
-            var recipes = await _db.Recipes
-                .Include(r => r.Ingredients)
-                .ToListAsync();
-            return Ok(recipes);
+            return await _context.Recipes.ToListAsync();
         }
 
-        // GET api/recipes/{id}
+        // GET: api/Recipes/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<Recipe>> Get(Guid id)
+        public async Task<ActionResult<Recipe>> GetRecipe(Guid id)
         {
-            var recipe = await _db.Recipes
-                .Include(r => r.Ingredients)
-                .FirstOrDefaultAsync(r => r.Id == id);
-            if (recipe == null) return NotFound();
-            return Ok(recipe);
-        }
+            var recipe = await _context.Recipes.FindAsync(id);
 
-        // POST api/recipes
-        [HttpPost]
-        public async Task<ActionResult<Recipe>> Create([FromBody] Recipe input)
-        {
-            input.Id = Guid.NewGuid();
-            input.CreatedAt = DateTime.UtcNow;
-            input.UpdatedAt = DateTime.UtcNow;
-
-            if (input.Ingredients != null)
+            if (recipe == null)
             {
-                foreach (var ing in input.Ingredients)
-                {
-                    ing.Id = Guid.NewGuid();
-                    ing.RecipeId = input.Id;
-                }
+                return NotFound();
             }
 
-            _db.Recipes.Add(input);
-            await _db.SaveChangesAsync();
-            return CreatedAtAction(nameof(Get), new { id = input.Id }, input);
+            return recipe;
         }
 
-        // PUT api/recipes/{id}
+        // PUT: api/Recipes/5
+        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<ActionResult> Update(Guid id, [FromBody] Recipe input)
+        public async Task<IActionResult> PutRecipe(Guid id, Recipe recipe)
         {
-            var recipe = await _db.Recipes
-                .Include(r => r.Ingredients)
-                .FirstOrDefaultAsync(r => r.Id == id);
-            if (recipe == null) return NotFound();
-
-            // Update scalar properties
-            recipe.Title = input.Title;
-            recipe.Description = input.Description;
-            recipe.ImageUrl = input.ImageUrl;
-            recipe.TimeInMins = input.TimeInMins;
-            recipe.UpdatedAt = DateTime.UtcNow;
-
-            recipe.Categories = input.Categories ?? new List<string>();
-            recipe.Instructions = input.Instructions ?? new List<string>();
-            recipe.Ratings = input.Ratings ?? new List<int>();
-
-            // Replace ingredients: simple approach - remove existing and add incoming
-            _db.Ingredients.RemoveRange(recipe.Ingredients);
-            recipe.Ingredients.Clear();
-
-            if (input.Ingredients != null)
+            if (id != recipe.Id)
             {
-                foreach (var ing in input.Ingredients)
+                return BadRequest();
+            }
+
+            _context.Entry(recipe).State = EntityState.Modified;
+
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!RecipeExists(id))
                 {
-                    ing.Id = Guid.NewGuid();
-                    ing.RecipeId = recipe.Id;
-                    recipe.Ingredients.Add(ing);
+                    return NotFound();
+                }
+                else
+                {
+                    throw;
                 }
             }
 
-            await _db.SaveChangesAsync();
             return NoContent();
         }
 
-        // DELETE api/recipes/{id}
-        [HttpDelete("{id}")]
-        public async Task<ActionResult> Delete(Guid id)
+        // POST: api/Recipes
+        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
+        [HttpPost]
+        public async Task<ActionResult<Recipe>> PostRecipe(Recipe recipe)
         {
-            var recipe = await _db.Recipes
-                .Include(r => r.Ingredients)
-                .FirstOrDefaultAsync(r => r.Id == id);
-            if (recipe == null) return NotFound();
+            _context.Recipes.Add(recipe);
+            await _context.SaveChangesAsync();
 
-            _db.Ingredients.RemoveRange(recipe.Ingredients);
-            _db.Recipes.Remove(recipe);
-            await _db.SaveChangesAsync();
+            return CreatedAtAction("GetRecipe", new { id = recipe.Id }, recipe);
+        }
+
+        // DELETE: api/Recipes/5
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteRecipe(Guid id)
+        {
+            var recipe = await _context.Recipes.FindAsync(id);
+            if (recipe == null)
+            {
+                return NotFound();
+            }
+
+            _context.Recipes.Remove(recipe);
+            await _context.SaveChangesAsync();
+
             return NoContent();
+        }
+
+        private bool RecipeExists(Guid id)
+        {
+            return _context.Recipes.Any(e => e.Id == id);
         }
     }
 }
