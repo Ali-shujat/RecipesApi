@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using RecipesApi.Data;
 using RecipesApi.Models;
@@ -25,14 +20,23 @@ namespace RecipesApi.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Recipe>>> GetRecipes()
         {
-            return await _context.Recipes.ToListAsync();
+            var recipes = await _context.Recipes
+                .Include(r => r.Comments)
+                .Include(r => r.Ratings)
+                .AsSplitQuery() // safer when loading multiple collection navigations
+                .ToListAsync();
+
+            return Ok(recipes);
         }
 
         // GET: api/Recipes/5
         [HttpGet("{id}")]
         public async Task<ActionResult<Recipe>> GetRecipe(Guid id)
         {
-            var recipe = await _context.Recipes.FindAsync(id);
+            var recipe = await _context.Recipes
+                .Include(r => r.Comments)
+                .Include(r => r.Ratings)
+                .FirstOrDefaultAsync(r => r.Id == id);
 
             if (recipe == null)
             {
