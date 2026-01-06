@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using RecipesApi.Data;
 using RecipesApi.Models;
+using RecipesApi.Models.Dtos;
 
 namespace RecipesApi.Controllers
 {
@@ -18,12 +19,38 @@ namespace RecipesApi.Controllers
 
         // GET: api/Recipes
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Recipe>>> GetRecipes()
+        public async Task<ActionResult<IEnumerable<RecipeDto>>> GetRecipes()
         {
             var recipes = await _context.Recipes
-                .Include(r => r.Comments)
-                .Include(r => r.Ratings)
-                .AsSplitQuery() // safer when loading multiple collection navigations
+                .Select(r => new RecipeDto
+                {
+                    Id = r.Id,
+                    Title = r.Title,
+                    Description = r.Description,
+                    ImageUrl = r.ImageUrl,
+                    TimeInMins = r.TimeInMins,
+                    CreatedAt = r.CreatedAt,
+                    UpdatedAt = r.UpdatedAt,
+                    Comments = r.Comments
+                        .OrderBy(c => c.CreatedAt)
+                        .Select(c => new CommentDto
+                        {
+                            Id = c.Id,
+                            Content = c.Content,
+                            CreatedAt = c.CreatedAt,
+                            UserName = c.UserName
+                        })
+                        .ToList(),
+                    Ratings = r.Ratings
+                        .Select(x => new RatingDto
+                        {
+                            Id = x.Id,
+                            Value = x.Value,
+                            CreatedAt = x.CreatedAt,
+                            UserName = x.UserName
+                        })
+                        .ToList()
+                })
                 .ToListAsync();
 
             return Ok(recipes);
@@ -31,32 +58,69 @@ namespace RecipesApi.Controllers
 
         // GET: api/Recipes/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<Recipe>> GetRecipe(Guid id)
+        public async Task<ActionResult<RecipeDto>> GetRecipe(Guid id)
         {
             var recipe = await _context.Recipes
-                .Include(r => r.Comments)
-                .Include(r => r.Ratings)
-                .FirstOrDefaultAsync(r => r.Id == id);
+                .Where(r => r.Id == id)
+                .Select(r => new RecipeDto
+                {
+                    Id = r.Id,
+                    Title = r.Title,
+                    Description = r.Description,
+                    ImageUrl = r.ImageUrl,
+                    TimeInMins = r.TimeInMins,
+                    CreatedAt = r.CreatedAt,
+                    UpdatedAt = r.UpdatedAt,
+                    Comments = r.Comments
+                        .OrderBy(c => c.CreatedAt)
+                        .Select(c => new CommentDto
+                        {
+                            Id = c.Id,
+                            Content = c.Content,
+                            CreatedAt = c.CreatedAt,
+                            UserName = c.UserName
+                        })
+                        .ToList(),
+                    Ratings = r.Ratings
+                        .Select(x => new RatingDto
+                        {
+                            Id = x.Id,
+                            Value = x.Value,
+                            CreatedAt = x.CreatedAt,
+                            UserName = x.UserName
+                        })
+                        .ToList()
+                })
+                .FirstOrDefaultAsync();
 
             if (recipe == null)
             {
                 return NotFound();
             }
 
-            return recipe;
+            return Ok(recipe);
         }
 
         // PUT: api/Recipes/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutRecipe(Guid id, Recipe recipe)
+        public async Task<IActionResult> PutRecipe(Guid id, [FromBody] RecipeUpdateDto updateDto)
         {
-            if (id != recipe.Id)
+            if (!ModelState.IsValid)
             {
-                return BadRequest();
+                return ValidationProblem(ModelState);
             }
 
-            _context.Entry(recipe).State = EntityState.Modified;
+            var recipe = await _context.Recipes.FindAsync(id);
+            if (recipe == null)
+            {
+                return NotFound();
+            }
+
+            recipe.Title = updateDto.Title;
+            recipe.Description = updateDto.Description;
+            recipe.ImageUrl = updateDto.ImageUrl;
+            recipe.TimeInMins = updateDto.TimeInMins;
+            recipe.UpdatedAt = DateTime.UtcNow;
 
             try
             {
@@ -68,24 +132,46 @@ namespace RecipesApi.Controllers
                 {
                     return NotFound();
                 }
-                else
-                {
-                    throw;
-                }
+                throw;
             }
 
             return NoContent();
         }
 
         // POST: api/Recipes
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<Recipe>> PostRecipe(Recipe recipe)
+        public async Task<ActionResult<RecipeDto>> PostRecipe([FromBody] RecipeCreateDto createDto)
         {
+            if (!ModelState.IsValid)
+            {
+                return ValidationProblem(ModelState);
+            }
+
+            var recipe = new Recipe
+            {
+                Title = createDto.Title,
+                Description = createDto.Description,
+                ImageUrl = createDto.ImageUrl,
+                TimeInMins = createDto.TimeInMins,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
             _context.Recipes.Add(recipe);
             await _context.SaveChangesAsync();
 
-            return CreatedAtAction("GetRecipe", new { id = recipe.Id }, recipe);
+            var resultDto = new RecipeDto
+            {
+                Id = recipe.Id,
+                Title = recipe.Title,
+                Description = recipe.Description,
+                ImageUrl = recipe.ImageUrl,
+                TimeInMins = recipe.TimeInMins,
+                CreatedAt = recipe.CreatedAt,
+                UpdatedAt = recipe.UpdatedAt
+            };
+
+            return CreatedAtAction(nameof(GetRecipe), new { id = recipe.Id }, resultDto);
         }
 
         // DELETE: api/Recipes/5

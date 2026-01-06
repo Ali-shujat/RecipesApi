@@ -1,13 +1,12 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using RecipesApi.Data;
-using RecipesApi.DTOs;
 using RecipesApi.Models;
+using RecipesApi.Models.Dtos;
 
 namespace RecipesApi.Controllers
 {
     [ApiController]
-    [Route("api/recipes/{recipeId}/ratings")]
     public class RatingsController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -17,35 +16,85 @@ namespace RecipesApi.Controllers
             _context = context;
         }
 
-        [HttpPost]
-        public async Task<IActionResult> AddRating(Guid recipeId, CreateRatingDto dto)
+        // GET: api/recipes/{recipeId}/ratings
+        [HttpGet("api/recipes/{recipeId:guid}/ratings")]
+        public async Task<ActionResult<IEnumerable<RatingDto>>> GetRatings(Guid recipeId)
         {
-            if (dto.Value < 1 || dto.Value > 5)
-                return BadRequest("Rating must be between 1 and 5");
+            var recipeExists = await _context.Recipes.AnyAsync(r => r.Id == recipeId);
+            if (!recipeExists) return NotFound();
+
+            var ratings = await _context.Ratings
+                .Where(r => r.RecipeId == recipeId)
+                .OrderBy(r => r.CreatedAt)
+                .Select(r => new RatingDto
+                {
+                    Id = r.Id,
+                    Value = r.Value,
+                    CreatedAt = r.CreatedAt,
+                    UserName = r.UserName
+                })
+                .ToListAsync();
+
+            return Ok(ratings);
+        }
+
+        // POST: api/recipes/{recipeId}/ratings
+        [HttpPost("api/recipes/{recipeId:guid}/ratings")]
+        public async Task<ActionResult<RatingDto>> PostRating(Guid recipeId, [FromBody] RatingCreateDto createDto)
+        {
+            if (!ModelState.IsValid) return ValidationProblem(ModelState);
+
+            var recipe = await _context.Recipes.FindAsync(recipeId);
+            if (recipe == null) return NotFound();
 
             var rating = new Rating
             {
-                Id = Guid.NewGuid(),
+                Value = createDto.Value,
+                UserName = createDto.UserName,
                 RecipeId = recipeId,
-                UserName = dto.UserName,
-                Value = dto.Value,
                 CreatedAt = DateTime.UtcNow
             };
 
             _context.Ratings.Add(rating);
             await _context.SaveChangesAsync();
 
-            return Ok(rating);
+            var dto = new RatingDto
+            {
+                Id = rating.Id,
+                Value = rating.Value,
+                CreatedAt = rating.CreatedAt,
+                UserName = rating.UserName
+            };
+
+            return CreatedAtAction(nameof(GetRatings), new { recipeId }, dto);
         }
 
-        [HttpGet("average")]
-        public async Task<IActionResult> GetAverageRating(Guid recipeId)
+        // PUT: api/ratings/{id}
+        [HttpPut("api/ratings/{id:guid}")]
+        public async Task<IActionResult> PutRating(Guid id, [FromBody] RatingCreateDto updateDto)
         {
-            var avg = await _context.Ratings
-                .Where(r => r.RecipeId == recipeId)
-                .AverageAsync(r => (double?)r.Value) ?? 0;
+            if (!ModelState.IsValid) return ValidationProblem(ModelState);
 
-            return Ok(new { averageRating = Math.Round(avg, 1) });
+            var rating = await _context.Ratings.FindAsync(id);
+            if (rating == null) return NotFound();
+
+            rating.Value = updateDto.Value;
+            rating.UserName = updateDto.UserName;
+
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
+
+        // DELETE: api/ratings/{id}
+        [HttpDelete("api/ratings/{id:guid}")]
+        public async Task<IActionResult> DeleteRating(Guid id)
+        {
+            var rating = await _context.Ratings.FindAsync(id);
+            if (rating == null) return NotFound();
+
+            _context.Ratings.Remove(rating);
+            await _context.SaveChangesAsync();
+            return NoContent();
         }
     }
 }
